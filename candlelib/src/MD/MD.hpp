@@ -531,8 +531,11 @@ namespace mab
             if (refuseMissingOnFirmware(regs))
                 return Error_t::REQUEST_INVALID;
 
+            // MD firmware 2.x silently ignores WRITE_REGISTER (0x42) and answers only the legacy
+            // write (0x40, reply 0xA0); the asynchronous path below already uses 0x40
             std::vector<u8> frame;
-            frame.push_back((u8)MdFrameId_E::WRITE_REGISTER);
+            frame.push_back((u8)(m_firmwareVersion.s.major == 2 ? MdFrameId_E::WRITE_REGISTER_LEGACY
+                                                               : MdFrameId_E::WRITE_REGISTER));
             frame.push_back((u8)0x0);
             auto payload = serializeMDRegisters(regs);
             frame.insert(frame.end(), payload.begin(), payload.end());

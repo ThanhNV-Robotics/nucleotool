@@ -74,6 +74,8 @@ Cautions:
 - Our drives run MD firmware 2.4.0–2.5.4, which lacks 12 registers this SDK reads
   (0x02A, 0x02B, 0x200, 0x201, 0x701, 0x7FB–0x7FF, 0x813, 0x814). Reading one makes the drive
   stop answering for seconds, so `MD` refuses them on firmware 2.x before sending.
+- Register writes use the legacy frame 0x40 on MD firmware 2.x (2.x ignores 0x42, so every
+  write — blink, zero, save, register write, test — failed silently).
 - `md info` also prints controller gains (position/velocity PID, impedance kp/kd).
 - New `md encoder` (like mdtool `encoder`): prints position, velocity, torque every 100 ms; reads registers only.
 - Null checks in `md info` and `MDCli::getMd`.
