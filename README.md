@@ -25,8 +25,11 @@ The binary is named `nucleotool`, so it does not clash with an installed `candle
 git submodule update --init candletool/3rd_party/CLI11 commons/googletest
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
-cd build/candletool        # run ./nucleotool from here (it is not installed)
+ln -s "$PWD/build/candletool/nucleotool" ~/.local/bin/nucleotool   # once: run it from any folder
 ```
+
+The commands below are written as `./nucleotool` (run inside `build/candletool`); with the link
+above, plain `nucleotool` works anywhere.
 
 ## Common commands
 
