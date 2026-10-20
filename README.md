@@ -39,6 +39,7 @@ Add `--device L` or `--device R` to use one leg only (faster, skips the lookup).
 | Find drives on one leg | `./nucleotool --device R md discover` |
 | Full info incl. controller gains | `./nucleotool md -i 10 info` |
 | Firmware version | `./nucleotool md -i 10 version` |
+| Live position / velocity / torque (Ctrl+C stops) | `./nucleotool md -i 10 encoder` |
 | Blink LED (find the drive) | `./nucleotool md -i 10 blink` |
 | Read a register (name or 0x address) | `./nucleotool md -i 10 register read motorImpPidKp` |
 | Write a register (not saved) | `./nucleotool md -i 10 register write motorImpPidKp 100` |
@@ -47,7 +48,7 @@ Add `--device L` or `--device R` to use one leg only (faster, skips the lookup).
 | Download config to a file | `./nucleotool md -i 10 config download ./md10.cfg` |
 | Upload config from a file | `./nucleotool md -i 10 config upload ./md10.cfg` |
 | Calibrate (motor moves!) | `./nucleotool md -i 10 calibration` |
-| Set current position as zero | `./nucleotool md -i 10 zero` |
+| Set current position as zero (home) | `./nucleotool md -i 10 zero`, then `md -i 10 save` to keep it after power-off |
 | Clear errors / warnings | `./nucleotool md -i 10 clear` |
 | Reboot a drive | `./nucleotool md -i 10 reset` |
 | Board / emulated CANdle version | `./nucleotool candle version` |
@@ -71,6 +72,7 @@ Cautions:
   (0x02A, 0x02B, 0x200, 0x201, 0x701, 0x7FB–0x7FF, 0x813, 0x814). Reading one makes the drive
   stop answering for seconds, so `MD` refuses them on firmware 2.x before sending.
 - `md info` also prints controller gains (position/velocity PID, impedance kp/kd).
+- New `md encoder` (like mdtool `encoder`): prints position, velocity, torque every 100 ms; reads registers only.
 - Null checks in `md info` and `MDCli::getMd`.
 
 ## License

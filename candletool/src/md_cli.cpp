@@ -31,12 +31,18 @@
 #include "flasher.hpp"
 #include "md_update.hpp"
 
+#include <atomic>
+#include <csignal>
+#include <cstdio>
 #include <thread>
 
 namespace mab
 {
     // nucleotool: with the UDP bus and no --device, use both legs of the NUCLEO bridge
     static constexpr std::array<const char*, 2> NUCLEO_LEGS = {"L", "R"};
+
+    // nucleotool: set by Ctrl+C while 'md encoder' is printing
+    static std::atomic<bool> g_encoderStop{false};
 
     static bool isNucleoAuto(const CandleBuilder& builder)
     {
@@ -700,6 +706,41 @@ namespace mab
                     }
                     detachCandle(candles[i]);
                 }
+            });
+
+        // nucleotool md encoder: like mdtool 'encoder', print position / velocity / torque
+        // every 100 ms until Ctrl+C. Only reads registers, the drive is not enabled.
+        auto* encoder =
+            mdCLi
+                ->add_subcommand("encoder",
+                                 "Print position, velocity and torque every 100 ms (Ctrl+C stops).")
+                ->needs(mdCanIdOption);
+        encoder->callback(
+            [this, candleBuilder, mdCanId]()
+            {
+                auto md = getMd(mdCanId, candleBuilder);
+                if (md == nullptr)
+                    return;
+                g_encoderStop = false;
+                std::signal(SIGINT, [](int) { g_encoderStop = true; });
+                MDRegisters_S regs;
+                std::cout << "MD " << *mdCanId << " (Ctrl+C to stop)" << std::endl;
+                while (!g_encoderStop)
+                {
+                    if (md->readRegisters(regs.position, regs.velocity, regs.torque) ==
+                        MD::Error_t::OK)
+                        std::printf("\rposition %9.4f rad   velocity %8.3f rad/s   torque %7.3f Nm ",
+                                    regs.position.value,
+                                    regs.velocity.value,
+                                    regs.torque.value);
+                    else
+                        std::printf("\rno reply from MD %u                                        ",
+                                    *mdCanId);
+                    std::fflush(stdout);
+                    usleep(100'000);
+                }
+                std::signal(SIGINT, SIG_DFL);
+                std::cout << std::endl;
             });
 
         // candletool md save
