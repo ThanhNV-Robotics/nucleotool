@@ -1,3 +1,45 @@
+# nucleotool — CANdle-SDK with a UDP bus for the NUCLEO-H755 leg bridge
+
+This is a fork of MAB Robotics' [CANdle-SDK](https://github.com/mabrobotics/CANdle-SDK) (v1.5.1).
+It adds a UDP bus so `candletool` can talk to MD drives through our NUCLEO-H755ZI-Q board
+(project `STM32H755_WS_FDCan_UDP`) instead of a CANdle. The board emulates one CANdle per
+FDCAN bus: left leg = FDCAN1 (IDs 10–60), right leg = FDCAN2 (IDs 70–120). The tool is
+renamed **`nucleotool`** so it does not clash with an installed `candletool`.
+
+## Build and run
+
+```bash
+git submodule update --init candletool/3rd_party/CLI11 commons/googletest
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j8
+cd build/candletool
+./nucleotool md discover          # both legs at once, ~5 s
+./nucleotool md -i 10 info        # leg found automatically
+./nucleotool --device R md -i 70 info
+```
+
+The PC needs a wired link to the board (board 192.168.10.10, PC 192.168.10.1). The board
+only accepts tool requests in MAINTENANCE mode.
+
+## Changes against upstream
+
+- `candlelib/src/communication_interface/UDP.hpp/.cpp`: new bus. One datagram per CANdle
+  transfer to UDP port 9998, header `[0xCD][bus|status][seq u16 LE]`.
+- `busTypes_t::UDP` in `attachCandle` / `CandleBuilder`; candletool `--bus UDP` (default),
+  `--device L|R|<ip>:L|<ip>:R`, `-d` default 8M (the legs run 1 Mbps / 8 Mbps).
+- Without `--device`: `md discover` scans both legs in parallel; `md -i <id> …` finds the leg itself.
+- `MD::discoverMDs` waits 2 ms per probed id instead of 10 ms.
+- MD firmware 2.x (our drives run 2.4.0–2.5.4) does not have 12 registers this SDK reads
+  (0x02A, 0x02B, 0x200, 0x201, 0x701, 0x7FB–0x7FF, 0x813, 0x814); asking for one makes the
+  drive stop answering for seconds. `MD` refuses them on firmware 2.x before sending.
+- `md info` also prints the controller gains (position/velocity PID, impedance kp/kd).
+- Fixes: null checks in `md info` and `MDCli::getMd`.
+
+Licenses are unchanged: MIT for the SDK (`LICENSE.txt`), LGPL-3 for candlelib (`candlelib/LICENSE`).
+The upstream README follows.
+
+---
+
 # CANdle-SDK
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.txt)

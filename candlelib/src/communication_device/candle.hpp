@@ -16,6 +16,7 @@
 #include "I_communication_interface.hpp"
 #include "USB.hpp"
 #include "SPI.hpp"
+#include "UDP.hpp"
 #include "mab_types.hpp"
 #include "candle_frame_adapter.hpp"
 #include "candle_frame_dto.hpp"
@@ -239,6 +240,11 @@ namespace mab
                 if (bus->connect() != mab::I_CommunicationInterface::Error_t::OK)
                     throw std::runtime_error("Could not connect SPI device!");
                 return attachCandle(datarate, std::move(bus), dontUseFDCANFrames);
+            case candleTypes::busTypes_t::UDP:
+                bus = std::make_unique<mab::UDP>();
+                if (bus->connect() != mab::I_CommunicationInterface::Error_t::OK)
+                    throw std::runtime_error("Could not open UDP connection!");
+                return attachCandle(datarate, std::move(bus), dontUseFDCANFrames);
             default:
                 throw std::runtime_error("Wrong communication interface provided!");
                 return {};
@@ -294,6 +300,14 @@ namespace mab
                     if (bus->connect() != I_CommunicationInterface::Error_t::OK)
                     {
                         m_logger.error("Could not connect USB device!");
+                        return {};
+                    }
+                    break;
+                case mab::candleTypes::UDP:
+                    bus = std::make_unique<mab::UDP>(std::string(pathOrId.value_or("L")));
+                    if (bus->connect() != I_CommunicationInterface::Error_t::OK)
+                    {
+                        m_logger.error("Could not open UDP connection!");
                         return {};
                     }
                     break;

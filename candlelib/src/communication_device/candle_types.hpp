@@ -33,7 +33,8 @@ namespace mab
         enum busTypes_t
         {
             USB,
-            SPI
+            SPI,
+            UDP  // NUCLEO-H755 leg bridge (FDCanUdp)
         };
 
         struct CANFrameData_t

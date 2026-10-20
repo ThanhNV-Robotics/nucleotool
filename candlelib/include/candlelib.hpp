@@ -12,6 +12,7 @@ It provides all modules and API interfaces.
 #include "pds.hpp"
 #include "USB.hpp"
 #include "SPI.hpp"
+#include "UDP.hpp"
 
 namespace mab
 {

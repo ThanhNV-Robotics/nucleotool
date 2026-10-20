@@ -50,6 +50,7 @@ target_sources(
           src/communication_device/candle_bootloader.cpp
           ${UNIX_ONLY_SOURCES}
           src/communication_interface/USB.cpp
+          src/communication_interface/UDP.cpp
           src/MD/MD.cpp
           src/MD/MDCO.cpp
           src/pds/pds.cpp

@@ -31,8 +31,20 @@
 #include "flasher.hpp"
 #include "md_update.hpp"
 
+#include <thread>
+
 namespace mab
 {
+    // nucleotool: with the UDP bus and no --device, use both legs of the NUCLEO bridge
+    static constexpr std::array<const char*, 2> NUCLEO_LEGS = {"L", "R"};
+
+    static bool isNucleoAuto(const CandleBuilder& builder)
+    {
+        builder.preBuildTask();   // bus type and --device are parsed there, before build()
+        return builder.busType != nullptr && *builder.busType == candleTypes::busTypes_t::UDP &&
+               (!builder.pathOrId.has_value() || builder.pathOrId->empty());
+    }
+
     MDCli::MDCli(CLI::App* rootCli, CANdleToolCtx_S ctx)
     {
         if (ctx.candleBranchVec.empty())
@@ -618,21 +630,76 @@ namespace mab
         discover->callback(
             [this, candleBuilder]()
             {
-                auto candleOpt = candleBuilder->build();
-                if (!candleOpt.has_value())
+                auto discoverOn = [this](const CandleBuilder& builder)
                 {
-                    m_logger.error("Could not initialize Candle!");
+                    auto candleOpt = builder.build();
+                    if (!candleOpt.has_value())
+                    {
+                        m_logger.error("Could not initialize Candle!");
+                        return;
+                    }
+                    Candle* candle = candleOpt.value();
+                    auto    ids    = MD::discoverMDs(candle);
+
+                    if (ids.empty())
+                        m_logger.error("No MD found on the bus for data %s",
+                                       datarateToStr(*(builder.datarate))
+                                           .value_or("NOT A DATARATE")
+                                           .c_str());
+                    detachCandle(candle);
+                };
+
+                if (!isNucleoAuto(*candleBuilder))
+                {
+                    discoverOn(*candleBuilder);
                     return;
                 }
-                Candle* candle = candleOpt.value();
-                auto    ids    = MD::discoverMDs(candle);
+                // The board serves L and R at the same time: scan both legs in parallel,
+                // quietly, then print the results per leg
+                std::array<Candle*, NUCLEO_LEGS.size()>              candles{};
+                std::array<std::vector<canId_t>, NUCLEO_LEGS.size()> ids;
+                for (size_t i = 0; i < NUCLEO_LEGS.size(); i++)
+                {
+                    CandleBuilder legBuilder = *candleBuilder;
+                    legBuilder.pathOrId      = NUCLEO_LEGS[i];
+                    candles[i]               = legBuilder.build().value_or(nullptr);
+                }
+                auto prevVerbosity    = Logger::g_m_verbosity;
+                Logger::g_m_verbosity = Logger::Verbosity_E::SILENT;
+                {
+                    // discoverMDs() also writes g_m_verbosity, always SILENT here
+                    std::vector<std::jthread> scans;
+                    for (size_t i = 0; i < NUCLEO_LEGS.size(); i++)
+                        if (candles[i] != nullptr)
+                            scans.emplace_back([&ids, &candles, i]()
+                                               { ids[i] = MD::discoverMDs(candles[i]); });
+                }
+                Logger::g_m_verbosity = prevVerbosity;
 
-                if (ids.empty())
-                    m_logger.error("No MD found on the bus for data %s",
-                                   datarateToStr(*(candleBuilder->datarate))
-                                       .value_or("NOT A DATARATE")
-                                       .c_str());
-                detachCandle(candle);
+                for (size_t i = 0; i < NUCLEO_LEGS.size(); i++)
+                {
+                    std::cout << "Leg " << NUCLEO_LEGS[i] << (i == 0 ? " (FDCAN1):" : " (FDCAN2):")
+                              << std::endl;
+                    if (candles[i] == nullptr)
+                    {
+                        m_logger.error("Could not initialize Candle!");
+                        continue;
+                    }
+                    if (ids[i].empty())
+                        m_logger.error("No MD found on the bus for data %s",
+                                       datarateToStr(*(candleBuilder->datarate))
+                                           .value_or("NOT A DATARATE")
+                                           .c_str());
+                    for (canId_t id : ids[i])
+                    {
+                        MD md(id, candles[i]);
+                        md.init();
+                        md.readRegister(md.m_mdRegisters.motorName);
+                        std::cout << " - Found '" << md.m_mdRegisters.motorName.value << "' at @"
+                                  << id << std::endl;
+                    }
+                    detachCandle(candles[i]);
+                }
             });
 
         // candletool md save
@@ -662,7 +729,9 @@ namespace mab
             [this, candleBuilder, mdCanId]()
             {
                 std::unique_ptr<MD, std::function<void(MD*)>> md = getMd(mdCanId, candleBuilder);
-                MDRegisters_S                                 readableRegisters;
+                if (md == nullptr)
+                    return;
+                MDRegisters_S readableRegisters;
 
                 md->setLogLevel(Logger::LogLevel_E::SILENT);
                 auto readReadableRegs = [&]<typename T>(MDRegisterEntry_S<T>& reg)
@@ -844,6 +913,20 @@ namespace mab
                              << std::endl;
                 }
 
+                // nucleotool: controller gains (the drive's own loops; impedance kp/kd are the
+                // stored defaults, the WBC sends its own gains with every command)
+                m_logger << "[Controller gains]" << std::endl;
+                m_logger << std::setprecision(4);
+                m_logger << "- position PID: kp " << readableRegisters.motorPosPidKp.value
+                         << ", ki " << readableRegisters.motorPosPidKi.value << ", kd "
+                         << readableRegisters.motorPosPidKd.value << ", windup "
+                         << readableRegisters.motorPosPidWindup.value << std::endl;
+                m_logger << "- velocity PID: kp " << readableRegisters.motorVelPidKp.value
+                         << ", ki " << readableRegisters.motorVelPidKi.value << ", kd "
+                         << readableRegisters.motorVelPidKd.value << ", windup "
+                         << readableRegisters.motorVelPidWindup.value << std::endl;
+                m_logger << "- impedance:    kp " << readableRegisters.motorImpPidKp.value
+                         << ", kd " << readableRegisters.motorImpPidKd.value << std::endl;
                 m_logger << "[State]" << std::endl;
                 m_logger << "- position: " << std::setprecision(2)
                          << readableRegisters.mainEncoderPosition.value << " rad" << std::endl;
@@ -1271,8 +1354,37 @@ namespace mab
         const std::shared_ptr<canId_t>             mdCanId,
         const std::shared_ptr<const CandleBuilder> candleBuilder)
     {
-        auto candle = candleBuilder->build().value_or(nullptr);
-        candle->init();
+        if (isNucleoAuto(*candleBuilder))
+        {
+            // Look for the MD on each leg, quietly, then connect for real on the leg it is on
+            for (const char* leg : NUCLEO_LEGS)
+            {
+                auto legBuilder      = std::make_shared<CandleBuilder>(*candleBuilder);
+                legBuilder->pathOrId = leg;
+                Logger::Verbosity_E prevVerbosity =
+                    Logger::g_m_verbosity.value_or(Logger::Verbosity_E::VERBOSITY_1);
+                Logger::g_m_verbosity = Logger::Verbosity_E::SILENT;
+                bool found            = false;
+                if (auto candleOpt = legBuilder->build(); candleOpt.has_value())
+                {
+                    {
+                        MD probe(*mdCanId, candleOpt.value());
+                        found = probe.init() == MD::Error_t::OK;
+                    }
+                    detachCandle(candleOpt.value());
+                }
+                Logger::g_m_verbosity = prevVerbosity;
+                if (found)
+                {
+                    m_logger.success("MD %u is on leg %s", *mdCanId, leg);
+                    return getMd(mdCanId, legBuilder);
+                }
+            }
+            m_logger.error("MD %u not found on leg L or R!", *mdCanId);
+            return nullptr;
+        }
+
+        auto candle = candleBuilder->build().value_or(nullptr);   // build() also runs init()
         if (candle == nullptr)
         {
             return (nullptr);

@@ -74,7 +74,7 @@ if(SUPPRESS_WARN)
   target_compile_options(candletool PRIVATE -w)
 endif()
 
-set_target_properties(candletool PROPERTIES OUTPUT_NAME "candletool")
+set_target_properties(candletool PROPERTIES OUTPUT_NAME "nucleotool")
 
 target_compile_definitions(
   candletool

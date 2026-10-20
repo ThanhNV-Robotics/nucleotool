@@ -55,14 +55,15 @@ int main(int argc, char** argv)
     app.add_option("-d,--datarate",
                    cmd.data,
                    "Select FD CAN Datarate CANdleTOOL will use for communication.")
-        ->default_val("1M")
+        ->default_val("8M")
         ->check(CLI::IsMember({"1M", "2M", "5M", "8M"}))
         ->expected(1);
-    app.add_option("--bus", cmd.bus, "Select bus to use (only for CandleHAT).")
-        ->check(CLI::IsMember({"USB", "SPI"}))
-        ->default_val("USB");
+    app.add_option("--bus", cmd.bus, "Select bus: UDP = NUCLEO-H755 leg bridge, USB/SPI = CANdle.")
+        ->check(CLI::IsMember({"UDP", "USB", "SPI"}))
+        ->default_val("UDP");
     app.add_option("--device",
                    cmd.variant,
+                   "For UDP: {L | R | <ip>:L | <ip>:R} (default: both legs, MD found by id) | "
                    "For SPI: {path to kernel device endpoint} | For USB: {device serial number}");
 
     // Verbosity
@@ -104,12 +105,17 @@ int main(int argc, char** argv)
     CANdleToolCtx_S candleToolCtx;
     candleToolCtx.candleBranchVec.push_back(canBranch);
 
-    auto preBuildTask = [busType, datarate, &cmd]()
+    auto preBuildTask = [busType, datarate, candleBuilder, &cmd]()
     {
         Logger log(Logger::ProgramLayer_E::TOP, "CANDLE_PREBUILD");
         log.debug("Running candle pre-build CLI parsing task...");
         // Parsing bus type
-        if (cmd.bus.find("USB") != std::string::npos)
+        if (cmd.bus.find("UDP") != std::string::npos)
+        {
+            log.debug("Using UDP bus (NUCLEO-H755 leg bridge)");
+            *busType = candleTypes::busTypes_t::UDP;
+        }
+        else if (cmd.bus.find("USB") != std::string::npos)
         {
             log.debug("Using USB bus");
             *busType = candleTypes::busTypes_t::USB;
@@ -123,6 +129,9 @@ int main(int argc, char** argv)
         {
             log.error("Specified bus is not valid!");
         }
+
+        if (!cmd.variant.empty())
+            candleBuilder->pathOrId = cmd.variant;
 
         // Parsing datarate
         auto parsedDataOpt = stringToData(cmd.data);

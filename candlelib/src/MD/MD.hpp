@@ -42,6 +42,9 @@ namespace mab
 
         std::optional<u32> m_timeout;
 
+        /// @brief Firmware version read by init(), 0 before
+        version_ut m_firmwareVersion = {.i = 0};
+
         /// @brief Possible errors present in this class
         enum class Error_t : u8
         {
@@ -342,6 +345,9 @@ namespace mab
                 return std::pair<Error_t, MdRegisterAccessErrorCode>(
                     Error_t::REQUEST_INVALID, MdRegisterAccessErrorCode::NONE);
             }
+            if (refuseMissingOnFirmware(regs))
+                return std::pair<Error_t, MdRegisterAccessErrorCode>(
+                    Error_t::REQUEST_INVALID, MdRegisterAccessErrorCode::NONE);
 
             // clear all the values for the incoming data from the MD
             std::apply([&](auto&&... reg) { ((reg.clear()), ...); }, regs);
@@ -522,6 +528,8 @@ namespace mab
                 m_log.error(errMsg.c_str());
                 return Error_t::REQUEST_INVALID;
             }
+            if (refuseMissingOnFirmware(regs))
+                return Error_t::REQUEST_INVALID;
 
             std::vector<u8> frame;
             frame.push_back((u8)MdFrameId_E::WRITE_REGISTER);
@@ -629,6 +637,57 @@ namespace mab
 
       private:
         Candle* const m_candle;
+
+        /// @brief Registers that MD firmware 2.x does not have (found on 2.4.6 through the
+        /// NUCLEO bridge). Asking for one makes the drive stop answering for a few seconds, so
+        /// such requests are refused before anything is sent.
+        static inline bool isMissingOnFirmware2(u16 address)
+        {
+            switch (address)
+            {
+                case 0x002A:  // mainEncoder
+                case 0x002B:  // mainEncoderDir
+                case 0x0200:  // torqueSensor
+                case 0x0201:  // torqueSensorData
+                case 0x0701:  // maxDriverCurrent
+                case 0x07FB:  // productionDate
+                case 0x07FC:  // productionBatch
+                case 0x07FD:  // uniqueID
+                case 0x07FE:  // hardwareRev
+                case 0x07FF:  // hardwareType
+                case 0x0813:  // miscStatus
+                case 0x0814:  // configStatus
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        template <class... T>
+        inline bool refuseMissingOnFirmware(std::tuple<MDRegisterEntry_S<T>&...>& regs) const
+        {
+            if (m_firmwareVersion.s.major != 2)
+                return false;
+            std::string names;
+            std::apply(
+                [&](auto&&... reg)
+                {
+                    ((isMissingOnFirmware2(reg.m_regAddress)
+                          ? (void)names.append(names.empty() ? "" : ", ")
+                                .append(std::string(reg.m_name))
+                          : (void)0),
+                     ...);
+                },
+                regs);
+            if (names.empty())
+                return false;
+            m_log.error("Not available on MD firmware %u.%u.%u: %s",
+                        m_firmwareVersion.s.major,
+                        m_firmwareVersion.s.minor,
+                        m_firmwareVersion.s.revision,
+                        names.c_str());
+            return true;
+        }
 
         inline const Candle* getCandle() const
         {

@@ -43,6 +43,7 @@ namespace mab
             return Error_t::NOT_CONNECTED;
 
         version_ut mfFirmwareVersion = {.i = m_mdRegisters.firmwareVersion.value};
+        m_firmwareVersion            = mfFirmwareVersion;
 
         if (mfFirmwareVersion.s.major != 0)
             return Error_t::OK;
@@ -623,6 +624,7 @@ namespace mab
     {
         constexpr canId_t MIN_VALID_ID = 10;     // ids less than that are reserved for special
         constexpr canId_t MAX_VALID_ID = 0x7FF;  // 11-bit value (standard can ID max)
+        constexpr u32     DISCOVERY_TIMEOUT_MS = 2;
 
         Logger               log(Logger::ProgramLayer_E::TOP, "MD_DISCOVERY");
         std::vector<canId_t> ids;
@@ -648,8 +650,12 @@ namespace mab
             // log.progress(float(id) / float(maxValueRange));
             Logger::g_m_verbosity = Logger::Verbosity_E::SILENT;
             MD md(id, candle);
+            // An MD answers a register read in ~0.2 ms at 8M; waiting the default 10 ms on
+            // every empty id made a full scan take ~21 s
+            md.m_timeout = DISCOVERY_TIMEOUT_MS;
             if (md.init() == MD::Error_t::OK)
             {
+                md.m_timeout.reset();
                 ids.push_back(id);
                 md.readRegister(md.m_mdRegisters.motorName);
                 Logger::g_m_verbosity = prevVerbosity;
