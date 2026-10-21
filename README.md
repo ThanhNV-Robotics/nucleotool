@@ -22,7 +22,7 @@ The binary is named `nucleotool`, so it does not clash with an installed `candle
 ## Build
 
 ```bash
-git submodule update --init candletool/3rd_party/CLI11 commons/googletest
+git submodule update --init candletool/3rd_party/CLI11   # + commons/googletest for -DMAKE_TESTS=ON
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 ln -s "$PWD/build/candletool/nucleotool" ~/.local/bin/nucleotool   # once: run it from any folder
@@ -79,6 +79,8 @@ Cautions:
 - `md info` also prints controller gains (position/velocity PID, impedance kp/kd).
 - New `md encoder` (like mdtool `encoder`): prints position, velocity, torque every 100 ms; reads registers only.
 - Null checks in `md info` and `MDCli::getMd`.
+- Removed what this project does not use: candlegui, pycandle (and pybind11), examples, docs,
+  docker images, launch scripts, cross toolchains, MAB's CI, the Windows CANdle USB driver.
 
 ## License
 

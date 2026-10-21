@@ -103,11 +103,6 @@ add_custom_command(
 set(CANDLETOOL_CPACK_COMPONENTS candletool _configs)
 
 if(WIN32)
-  add_executable(candle-win-driver IMPORTED
-    ${CMAKE_CURRENT_SOURCE_DIR}/tools/candlesdk-win-driver.exe)
-
-  install(PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/tools/candlesdk-win-driver.exe
-    TYPE BIN)
   install(TARGETS candletool RUNTIME COMPONENT candletool)
 
   install(

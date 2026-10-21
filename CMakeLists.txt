@@ -17,16 +17,10 @@ project(
   candlesdk
   VERSION ${CANDLESDK_VERSION_1}.${CANDLESDK_VERSION_2}.${CANDLESDK_VERSION_3})
 
-option(CANDLESDK_BUILD_PYTHON "Build python library shared object" OFF)
-option(CANDLESDK_BUILD_EXAMPLES
-       "Build examples (has no effect on python builds)" ON)
-option(CANDLESDK_BUILD_CANDLETOOL
-       "Build candletool executable (has no effect on python builds)" ON)
-option(CANDLESDK_BUILD_MDGUI
-       "Build mdgui executable (has no effect on python builds)" ON)
+option(CANDLESDK_BUILD_CANDLETOOL "Build candletool (nucleotool) executable" ON)
 option(
   CANDLE_BUILD_STATIC
-  "Build static library (has no effect on windows library and python builds)"
+  "Build static library (has no effect on windows library builds)"
   ON)
 option(MAKE_TESTS "Enable/disable some of the unit tests" OFF)
 option(SUPPRESS_WARN "Enable/disable compilation warnings" OFF)
@@ -34,10 +28,7 @@ option(SUPPRESS_WARN "Enable/disable compilation warnings" OFF)
 message("====================")
 message("CandleSDK version: ${CANDLESDK_VERSION} ${CANDLESDK_VERSION_TAG}")
 message("Available flags and their values:")
-message("  CANDLESDK_BUILD_PYTHON = ${CANDLESDK_BUILD_PYTHON}")
-message("  CANDLESDK_BUILD_EXAMPLES = ${CANDLESDK_BUILD_EXAMPLES}")
 message("  CANDLESDK_BUILD_CANDLETOOL = ${CANDLESDK_BUILD_CANDLETOOL}")
-message("  CANDLESDK_BUILD_MDGUI = ${CANDLESDK_BUILD_MDGUI}")
 message("  CANDLE_BUILD_STATIC = ${CANDLE_BUILD_STATIC}")
 message("  MAKE_TESTS = ${MAKE_TESTS}")
 message("  SUPPRESS_WARN = ${SUPPRESS_WARN}")
@@ -84,40 +75,12 @@ endmacro(add_unit_test_executable)
 
 add_subdirectory(commons)
 add_subdirectory(candlelib)
-if(CANDLESDK_BUILD_PYTHON)
-    add_subdirectory(pycandle)
-else()
-    if(CANDLESDK_BUILD_CANDLETOOL)
-        add_subdirectory(candletool)
-    endif()
-    if(CANDLESDK_BUILD_EXAMPLES)
-        add_subdirectory(examples)
-    endif()
-    if(CANDLESDK_BUILD_MDGUI)
-        add_subdirectory(candlegui)
-    endif()
-
-    # candletool and candlegui each generate their own CPackConfig (see the
-    # comments next to their `include(CPack)` calls) instead of sharing the
-    # default one, so CMake won't auto-create a `package` target. Wire up a
-    # single `make package` that builds packages for whichever of them are
-    # enabled.
-    set(CANDLESDK_PACKAGE_COMMANDS)
-    if(CANDLESDK_BUILD_CANDLETOOL)
-        list(APPEND CANDLESDK_PACKAGE_COMMANDS
-             COMMAND ${CMAKE_CPACK_COMMAND} --config
-                     ${CMAKE_BINARY_DIR}/CPackConfig_candletool.cmake)
-    endif()
-    if(CANDLESDK_BUILD_MDGUI)
-        list(APPEND CANDLESDK_PACKAGE_COMMANDS
-             COMMAND ${CMAKE_CPACK_COMMAND} --config
-                     ${CMAKE_BINARY_DIR}/CPackConfig_mdgui.cmake)
-    endif()
-    if(CANDLESDK_PACKAGE_COMMANDS)
-        add_custom_target(
-          package ${CANDLESDK_PACKAGE_COMMANDS}
-          COMMENT "Building CPack packages"
-          VERBATIM)
-    endif()
-
+if(CANDLESDK_BUILD_CANDLETOOL)
+    add_subdirectory(candletool)
+    # candletool generates its own CPackConfig (see its `include(CPack)`), so wire up `make package`
+    add_custom_target(
+      package COMMAND ${CMAKE_CPACK_COMMAND} --config
+                      ${CMAKE_BINARY_DIR}/CPackConfig_candletool.cmake
+      COMMENT "Building CPack packages"
+      VERBATIM)
 endif()

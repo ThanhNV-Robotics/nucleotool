@@ -1,16 +1,6 @@
-# CPack configuration for the candletool package.
-#
-# CANdle-SDK bundles multiple installable executables (candletool, mdgui).
-# Each gets its own CPack config/output (CPACK_OUTPUT_CONFIG_FILE below) so
-# that including this doesn't clobber the one generated for candlegui (both
-# would otherwise write to the same default
-# ${CMAKE_BINARY_DIR}/CPackConfig.cmake). CPACK_INSTALL_CMAKE_PROJECTS is
-# restricted to CANDLETOOL_CPACK_COMPONENTS (built up in CMakeLists.txt
-# alongside each install() call) so this package doesn't bundle mdgui's
-# install rules too. See the top-level CMakeLists.txt for the combined
-# `package` target that invokes both projects' configs, and
-# launch/buildForLinux.sh / launch/buildForWindows.sh for how each config is
-# invoked directly via `cpack --config`.
+# CPack configuration for the candletool (nucleotool) package. Uses its own CPack
+# config file (CPACK_OUTPUT_CONFIG_FILE below); the top-level CMakeLists.txt wires it
+# into `make package`.
 
 set(CPACK_PROJECT_NAME "candletool")
 set(CPACK_PACKAGE_NAME candletool)

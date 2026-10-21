@@ -4,10 +4,6 @@ project(candlelib)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-if(CANDLESDK_BUILD_PYTHON)
-    set(CANDLE_BUILD_STATIC ON)
-endif()
-
 if(UNIX)
     set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules)
     include(${CMAKE_MODULE_PATH}/Findlibusb.cmake)
