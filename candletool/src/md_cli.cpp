@@ -1389,6 +1389,105 @@ namespace mab
                     m_logger.error("Failed to zero MD!");
                 }
             });
+
+        // nucleotool md zero-all: zero + save every drive at the default leg IDs
+        // (L: 10..60, R: 70..120). IDs that do not answer are skipped.
+        auto zeroAllIds = std::make_shared<std::vector<canId_t>>(
+            std::vector<canId_t>{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120});
+        auto* zeroAll =
+            mdCLi
+                ->add_subcommand("zero-all",
+                                 "Set the current position as zero on all drives and save it "
+                                 "to flash (default IDs 10..120).")
+                ->excludes(mdCanIdOption);
+        zeroAll->add_option("--ids", *zeroAllIds, "CAN IDs to zero (default 10 20 ... 120).")
+            ->delimiter(',');
+        zeroAll->callback(
+            [this, candleBuilder, zeroAllIds]()
+            {
+                // Which legs to use: both without --device, else only the given one
+                std::vector<std::string> legs;
+                if (isNucleoAuto(*candleBuilder))
+                    legs.assign(NUCLEO_LEGS.begin(), NUCLEO_LEGS.end());
+                else
+                    legs.emplace_back(candleBuilder->pathOrId.value_or(""));
+                auto idOnLeg = [](canId_t id, const std::string& leg)
+                {
+                    if (leg.empty())
+                        return true;
+                    if (leg.back() == 'L')
+                        return id <= 60;
+                    if (leg.back() == 'R')
+                        return id > 60;
+                    return true;   // unknown device string: try every ID
+                };
+
+                std::vector<canId_t> ok, failed, missing;
+                for (const std::string& leg : legs)
+                {
+                    std::vector<canId_t> legIds;
+                    for (canId_t id : *zeroAllIds)
+                        if (idOnLeg(id, leg))
+                            legIds.push_back(id);
+                    if (legIds.empty())
+                        continue;
+
+                    CandleBuilder legBuilder = *candleBuilder;
+                    legBuilder.pathOrId      = leg;
+                    Candle* candle           = legBuilder.build().value_or(nullptr);
+                    if (candle == nullptr)
+                    {
+                        m_logger.error("Could not initialize Candle for leg %s!", leg.c_str());
+                        missing.insert(missing.end(), legIds.begin(), legIds.end());
+                        continue;
+                    }
+                    for (canId_t id : legIds)
+                    {
+                        MD   md(id, candle);
+                        auto prevVerbosity =
+                            Logger::g_m_verbosity.value_or(Logger::Verbosity_E::VERBOSITY_1);
+                        Logger::g_m_verbosity = Logger::Verbosity_E::SILENT;
+                        bool found            = md.init() == MD::Error_t::OK;
+                        Logger::g_m_verbosity = prevVerbosity;
+                        if (!found)
+                        {
+                            m_logger.warn("MD %u not found, skipped", id);
+                            missing.push_back(id);
+                            continue;
+                        }
+                        if (md.zero() != MD::Error_t::OK)
+                        {
+                            m_logger.error("MD %u: zero failed!", id);
+                            failed.push_back(id);
+                            continue;
+                        }
+                        usleep(50'000);   // let the drive apply the new zero before saving
+                        if (md.save() != MD::Error_t::OK)
+                        {
+                            m_logger.error("MD %u: zeroed but save failed!", id);
+                            failed.push_back(id);
+                            continue;
+                        }
+                        m_logger.success("MD %u zeroed and saved", id);
+                        ok.push_back(id);
+                        usleep(200'000);   // flash write; give the drive time before the next one
+                    }
+                    detachCandle(candle);
+                }
+
+                auto join = [](const std::vector<canId_t>& v)
+                {
+                    std::string s;
+                    for (canId_t id : v)
+                        s += (s.empty() ? "" : " ") + std::to_string(id);
+                    return s.empty() ? std::string("-") : s;
+                };
+                std::cout << "Zeroed + saved: " << join(ok) << std::endl
+                          << "Failed:         " << join(failed) << std::endl
+                          << "Not found:      " << join(missing) << std::endl;
+                if (!failed.empty())
+                    exit(1);
+            });
     }
 
     std::unique_ptr<MD, std::function<void(MD*)>> MDCli::getMd(

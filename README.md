@@ -52,6 +52,7 @@ Add `--device L` or `--device R` to use one leg only (faster, skips the lookup).
 | Upload config from a file | `./nucleotool md -i 10 config upload ./md10.cfg` |
 | Calibrate (motor moves!) | `./nucleotool md -i 10 calibration` |
 | Set current position as zero (home) | `./nucleotool md -i 10 zero`, then `md -i 10 save` to keep it after power-off |
+| Zero + save all drives (IDs 10..120, missing ones skipped) | `./nucleotool md zero-all` (or `--ids 10,20,30`) |
 | Clear errors / warnings | `./nucleotool md -i 10 clear` |
 | Reboot a drive | `./nucleotool md -i 10 reset` |
 | Board / emulated CANdle version | `./nucleotool candle version` |
