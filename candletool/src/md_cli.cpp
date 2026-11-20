@@ -1405,89 +1405,162 @@ namespace mab
         zeroAll->callback(
             [this, candleBuilder, zeroAllIds]()
             {
-                // Which legs to use: both without --device, else only the given one
-                std::vector<std::string> legs;
-                if (isNucleoAuto(*candleBuilder))
-                    legs.assign(NUCLEO_LEGS.begin(), NUCLEO_LEGS.end());
-                else
-                    legs.emplace_back(candleBuilder->pathOrId.value_or(""));
-                auto idOnLeg = [](canId_t id, const std::string& leg)
-                {
-                    if (leg.empty())
-                        return true;
-                    if (leg.back() == 'L')
-                        return id <= 60;
-                    if (leg.back() == 'R')
-                        return id > 60;
-                    return true;   // unknown device string: try every ID
-                };
-
-                std::vector<canId_t> ok, failed, missing;
-                for (const std::string& leg : legs)
-                {
-                    std::vector<canId_t> legIds;
-                    for (canId_t id : *zeroAllIds)
-                        if (idOnLeg(id, leg))
-                            legIds.push_back(id);
-                    if (legIds.empty())
-                        continue;
-
-                    CandleBuilder legBuilder = *candleBuilder;
-                    legBuilder.pathOrId      = leg;
-                    Candle* candle           = legBuilder.build().value_or(nullptr);
-                    if (candle == nullptr)
-                    {
-                        m_logger.error("Could not initialize Candle for leg %s!", leg.c_str());
-                        missing.insert(missing.end(), legIds.begin(), legIds.end());
-                        continue;
-                    }
-                    for (canId_t id : legIds)
-                    {
-                        MD   md(id, candle);
-                        auto prevVerbosity =
-                            Logger::g_m_verbosity.value_or(Logger::Verbosity_E::VERBOSITY_1);
-                        Logger::g_m_verbosity = Logger::Verbosity_E::SILENT;
-                        bool found            = md.init() == MD::Error_t::OK;
-                        Logger::g_m_verbosity = prevVerbosity;
-                        if (!found)
-                        {
-                            m_logger.warn("MD %u not found, skipped", id);
-                            missing.push_back(id);
-                            continue;
-                        }
-                        if (md.zero() != MD::Error_t::OK)
-                        {
-                            m_logger.error("MD %u: zero failed!", id);
-                            failed.push_back(id);
-                            continue;
-                        }
-                        usleep(50'000);   // let the drive apply the new zero before saving
-                        if (md.save() != MD::Error_t::OK)
-                        {
-                            m_logger.error("MD %u: zeroed but save failed!", id);
-                            failed.push_back(id);
-                            continue;
-                        }
-                        m_logger.success("MD %u zeroed and saved", id);
-                        ok.push_back(id);
-                        usleep(200'000);   // flash write; give the drive time before the next one
-                    }
-                    detachCandle(candle);
-                }
-
-                auto join = [](const std::vector<canId_t>& v)
-                {
-                    std::string s;
-                    for (canId_t id : v)
-                        s += (s.empty() ? "" : " ") + std::to_string(id);
-                    return s.empty() ? std::string("-") : s;
-                };
-                std::cout << "Zeroed + saved: " << join(ok) << std::endl
-                          << "Failed:         " << join(failed) << std::endl
-                          << "Not found:      " << join(missing) << std::endl;
-                if (!failed.empty())
+                bool allOk = forEachMd(candleBuilder,
+                                       *zeroAllIds,
+                                       "Zeroed + saved",
+                                       [this](MD& md, canId_t id)
+                                       {
+                                           if (md.zero() != MD::Error_t::OK)
+                                           {
+                                               m_logger.error("MD %u: zero failed!", id);
+                                               return false;
+                                           }
+                                           usleep(50'000);   // let the drive apply the new zero
+                                           if (md.save() != MD::Error_t::OK)
+                                           {
+                                               m_logger.error("MD %u: zeroed but save failed!", id);
+                                               return false;
+                                           }
+                                           m_logger.success("MD %u zeroed and saved", id);
+                                           usleep(200'000);   // flash write; wait before the next
+                                           return true;
+                                       });
+                if (!allOk)
                     exit(1);
             });
+
+        // nucleotool md clear-all: clear errors and/or warnings on every drive at the default
+        // leg IDs (L: 10..60, R: 70..120). IDs that do not answer are skipped.
+        auto clearAllIds = std::make_shared<std::vector<canId_t>>(
+            std::vector<canId_t>{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120});
+        auto* clearAll = mdCLi
+                             ->add_subcommand("clear-all",
+                                              "Clear errors and warnings on all drives "
+                                              "(default IDs 10..120).")
+                             ->excludes(mdCanIdOption);
+        clearAll->add_option("--ids", *clearAllIds, "CAN IDs to clear (default 10 20 ... 120).")
+            ->delimiter(',');
+        ClearOptions clearAllOptions(clearAll);
+        clearAll->callback(
+            [this, candleBuilder, clearAllIds, clearAllOptions]()
+            {
+                const std::string type     = *clearAllOptions.clearType;
+                const bool        doWarn   = type == "warn" || type == "all";
+                const bool        doErrors = type == "err" || type == "all";
+                if (!doWarn && !doErrors)
+                {
+                    m_logger.error("Unknown clear type '%s' (use all, warn or err)", type.c_str());
+                    exit(1);
+                }
+                bool allOk = forEachMd(candleBuilder,
+                                       *clearAllIds,
+                                       "Cleared",
+                                       [this, doWarn, doErrors](MD& md, canId_t id)
+                                       {
+                                           MDRegisters_S registers;
+                                           if (doWarn)
+                                           {
+                                               registers.runClearWarnings = 1;
+                                               if (md.writeRegisters(registers.runClearWarnings) !=
+                                                   MD::Error_t::OK)
+                                               {
+                                                   m_logger.error(
+                                                       "MD %u: could not clear warnings!", id);
+                                                   return false;
+                                               }
+                                           }
+                                           if (doErrors)
+                                           {
+                                               registers.runClearErrors = 1;
+                                               if (md.writeRegisters(registers.runClearErrors) !=
+                                                   MD::Error_t::OK)
+                                               {
+                                                   m_logger.error("MD %u: could not clear errors!",
+                                                                  id);
+                                                   return false;
+                                               }
+                                           }
+                                           m_logger.success("MD %u cleared", id);
+                                           return true;
+                                       });
+                if (!allOk)
+                    exit(1);
+            });
+    }
+
+    bool MDCli::forEachMd(const std::shared_ptr<const CandleBuilder>& candleBuilder,
+                          const std::vector<canId_t>&                 ids,
+                          const std::string&                          doneLabel,
+                          const std::function<bool(MD&, canId_t)>&    action)
+    {
+        // Which legs to use: both without --device, else only the given one
+        std::vector<std::string> legs;
+        if (isNucleoAuto(*candleBuilder))
+            legs.assign(NUCLEO_LEGS.begin(), NUCLEO_LEGS.end());
+        else
+            legs.emplace_back(candleBuilder->pathOrId.value_or(""));
+        auto idOnLeg = [](canId_t id, const std::string& leg)
+        {
+            if (leg.empty())
+                return true;
+            if (leg.back() == 'L')
+                return id <= 60;
+            if (leg.back() == 'R')
+                return id > 60;
+            return true;   // unknown device string: try every ID
+        };
+
+        std::vector<canId_t> ok, failed, missing;
+        for (const std::string& leg : legs)
+        {
+            std::vector<canId_t> legIds;
+            for (canId_t id : ids)
+                if (idOnLeg(id, leg))
+                    legIds.push_back(id);
+            if (legIds.empty())
+                continue;
+
+            CandleBuilder legBuilder = *candleBuilder;
+            legBuilder.pathOrId      = leg;
+            Candle* candle           = legBuilder.build().value_or(nullptr);
+            if (candle == nullptr)
+            {
+                m_logger.error("Could not initialize Candle for leg %s!", leg.c_str());
+                missing.insert(missing.end(), legIds.begin(), legIds.end());
+                continue;
+            }
+            for (canId_t id : legIds)
+            {
+                MD   md(id, candle);
+                auto prevVerbosity = Logger::g_m_verbosity.value_or(Logger::Verbosity_E::VERBOSITY_1);
+                Logger::g_m_verbosity = Logger::Verbosity_E::SILENT;
+                bool found            = md.init() == MD::Error_t::OK;
+                Logger::g_m_verbosity = prevVerbosity;
+                if (!found)
+                {
+                    m_logger.warn("MD %u not found, skipped", id);
+                    missing.push_back(id);
+                    continue;
+                }
+                (action(md, id) ? ok : failed).push_back(id);
+            }
+            detachCandle(candle);
+        }
+
+        auto join = [](const std::vector<canId_t>& v)
+        {
+            std::string s;
+            for (canId_t id : v)
+                s += (s.empty() ? "" : " ") + std::to_string(id);
+            return s.empty() ? std::string("-") : s;
+        };
+        std::string label = doneLabel + ":";
+        label.resize(std::max<size_t>(label.size() + 1, 16), ' ');
+        std::cout << label << join(ok) << std::endl
+                  << std::string("Failed:").append(label.size() - 7, ' ') << join(failed) << std::endl
+                  << std::string("Not found:").append(label.size() - 10, ' ') << join(missing)
+                  << std::endl;
+        return failed.empty();
     }
 
     std::unique_ptr<MD, std::function<void(MD*)>> MDCli::getMd(

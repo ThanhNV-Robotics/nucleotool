@@ -31,6 +31,12 @@ namespace mab
                                                  const std::string& value,
                                                  bool               quiet = false);
         std::optional<std::string> registerRead(MD& md, u16 regAdress);
+        // Run action on every MD in ids that answers (both NUCLEO legs unless --device is
+        // given). Missing IDs are skipped. Prints a summary; returns false if any action failed.
+        bool forEachMd(const std::shared_ptr<const CandleBuilder>& candleBuilder,
+                       const std::vector<canId_t>&                 ids,
+                       const std::string&                          doneLabel,
+                       const std::function<bool(MD&, canId_t)>&    action);
 
         struct CanOptions
         {

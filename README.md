@@ -54,6 +54,7 @@ Add `--device L` or `--device R` to use one leg only (faster, skips the lookup).
 | Set current position as zero (home) | `./nucleotool md -i 10 zero`, then `md -i 10 save` to keep it after power-off |
 | Zero + save all drives (IDs 10..120, missing ones skipped) | `./nucleotool md zero-all` (or `--ids 10,20,30`) |
 | Clear errors / warnings | `./nucleotool md -i 10 clear` |
+| Clear errors / warnings on all drives (IDs 10..120, missing ones skipped) | `./nucleotool md clear-all` (or `clear-all err` / `clear-all warn`, `--ids 10,20,30`) |
 | Reboot a drive | `./nucleotool md -i 10 reset` |
 | Board / emulated CANdle version | `./nucleotool candle version` |
 | More output for debugging | add `-v2` before `md`, e.g. `./nucleotool -v2 md -i 10 info` |
